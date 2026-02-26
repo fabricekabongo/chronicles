@@ -18,6 +18,10 @@ ingest:
     enabled: true
   kafka:
     enabled: false
+    brokers: ["127.0.0.1:9092"]
+    topics: ["events"]
+    group_id: g1
+    commit_mode: after_quorum_commit
   rabbitmq:
     enabled: true
 backup:
@@ -52,6 +56,10 @@ enabled = true
 
 [ingest.kafka]
 enabled = false
+brokers = ["127.0.0.1:9092"]
+topics = ["events"]
+group_id = "g1"
+commit_mode = "after_quorum_commit"
 
 [ingest.rabbitmq]
 enabled = false
@@ -74,12 +82,22 @@ func TestValidateDisallowMultipleAdapters(t *testing.T) {
 		Server: ServerConfig{NodeID: "n1"},
 		Ingest: IngestConfig{
 			Socket:   AdapterConfig{Enabled: true},
-			Kafka:    AdapterConfig{Enabled: true},
+			Kafka:    KafkaConfig{Enabled: true, Brokers: []string{"b:9092"}, Topics: []string{"t"}, GroupID: "g", CommitMode: "after_quorum_commit"},
 			RabbitMQ: AdapterConfig{Enabled: false},
 		},
 		Feature: FeatureConfig{AllowMultipleAdapters: false},
 	}
 	if err := cfg.Validate(); err == nil {
 		t.Fatalf("expected validation error when multiple adapters are enabled")
+	}
+}
+
+func TestValidateKafkaCommitMode(t *testing.T) {
+	cfg := Config{
+		Server: ServerConfig{NodeID: "n1"},
+		Ingest: IngestConfig{Kafka: KafkaConfig{Enabled: true, Brokers: []string{"b:9092"}, Topics: []string{"events"}, GroupID: "g1", CommitMode: "before_quorum"}},
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected commit mode validation error")
 	}
 }

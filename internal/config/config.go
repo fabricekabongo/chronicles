@@ -19,12 +19,49 @@ type ServerConfig struct {
 
 type IngestConfig struct {
 	Socket   AdapterConfig `mapstructure:"socket"`
-	Kafka    AdapterConfig `mapstructure:"kafka"`
+	Kafka    KafkaConfig   `mapstructure:"kafka"`
 	RabbitMQ AdapterConfig `mapstructure:"rabbitmq"`
 }
 
 type AdapterConfig struct {
 	Enabled bool `mapstructure:"enabled"`
+}
+
+type KafkaConfig struct {
+	Enabled        bool             `mapstructure:"enabled"`
+	Brokers        []string         `mapstructure:"brokers"`
+	Topics         []string         `mapstructure:"topics"`
+	GroupID        string           `mapstructure:"group_id"`
+	ClientID       string           `mapstructure:"client_id"`
+	WorkerCount    int              `mapstructure:"worker_count"`
+	MaxPollRecords int              `mapstructure:"max_poll_records"`
+	CommitMode     string           `mapstructure:"commit_mode"`
+	ParsingMode    string           `mapstructure:"parsing_mode"`
+	Fetch          KafkaFetchConfig `mapstructure:"fetch"`
+	Auth           KafkaAuthConfig  `mapstructure:"auth"`
+}
+
+type KafkaFetchConfig struct {
+	MinBytes  int `mapstructure:"min_bytes"`
+	MaxBytes  int `mapstructure:"max_bytes"`
+	MaxWaitMS int `mapstructure:"max_wait_ms"`
+}
+
+type KafkaAuthConfig struct {
+	SASL KafkaSASLConfig `mapstructure:"sasl"`
+	TLS  KafkaTLSConfig  `mapstructure:"tls"`
+}
+
+type KafkaSASLConfig struct {
+	Enabled   bool   `mapstructure:"enabled"`
+	Mechanism string `mapstructure:"mechanism"`
+	Username  string `mapstructure:"username"`
+	Password  string `mapstructure:"password"`
+}
+
+type KafkaTLSConfig struct {
+	Enabled            bool `mapstructure:"enabled"`
+	InsecureSkipVerify bool `mapstructure:"insecure_skip_verify"`
 }
 
 type BackupConfig struct {
@@ -66,6 +103,10 @@ func Load(path string) (Config, error) {
 func setDefaults(v *viper.Viper) {
 	v.SetDefault("feature.allow_multiple_adapters", true)
 	v.SetDefault("backup.s3.provider", "aws-sdk-v2")
+	v.SetDefault("ingest.kafka.worker_count", 4)
+	v.SetDefault("ingest.kafka.max_poll_records", 500)
+	v.SetDefault("ingest.kafka.commit_mode", "after_quorum_commit")
+	v.SetDefault("ingest.kafka.parsing_mode", "json_envelope")
 }
 
 func (c Config) Validate() error {
@@ -85,6 +126,20 @@ func (c Config) Validate() error {
 		}
 		if enabled > 1 {
 			return fmt.Errorf("multiple adapters enabled while feature.allow_multiple_adapters=false")
+		}
+	}
+	if c.Ingest.Kafka.Enabled {
+		if len(c.Ingest.Kafka.Brokers) == 0 {
+			return fmt.Errorf("ingest.kafka.brokers is required")
+		}
+		if len(c.Ingest.Kafka.Topics) == 0 {
+			return fmt.Errorf("ingest.kafka.topics is required")
+		}
+		if c.Ingest.Kafka.GroupID == "" {
+			return fmt.Errorf("ingest.kafka.group_id is required")
+		}
+		if c.Ingest.Kafka.CommitMode != "after_quorum_commit" {
+			return fmt.Errorf("ingest.kafka.commit_mode must be after_quorum_commit")
 		}
 	}
 	return nil
