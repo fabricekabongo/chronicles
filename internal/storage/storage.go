@@ -39,8 +39,10 @@ const (
 type Engine interface {
 	EnsureRoute(ctx context.Context, stream domain.StreamRef, partitionID domain.PartitionID, receivedAt time.Time) (domain.ChronicleRoute, error)
 	GetRoute(ctx context.Context, stream domain.StreamRef) (domain.ChronicleRoute, bool, error)
-	AppendCommittedBatch(ctx context.Context, route domain.ChronicleRoute, term uint64, entries []AppendEntry, committedAt time.Time) error
+	AppendUncommittedBatch(ctx context.Context, route domain.ChronicleRoute, term uint64, entries []AppendEntry) error
 	MarkCommitted(ctx context.Context, partitionID domain.PartitionID, creationDayUTC string, lsnFrom, lsnTo uint64, committedAt time.Time) error
 	GetChronicleByStream(ctx context.Context, stream domain.StreamRef) ([]AppendEntry, error)
 	GetChronicleByStreamVisualOrder(ctx context.Context, stream domain.StreamRef) ([]AppendEntry, error)
+	ApplySnapshot(ctx context.Context, partitionID domain.PartitionID, appliedIndex uint64, watermarkDayUTC string) error
+	CreateSnapshot(ctx context.Context, partitionID domain.PartitionID) (map[string]string, error)
 }

@@ -50,7 +50,10 @@ func TestEntriesAreAppendOnlyViaTriggers(t *testing.T) {
 		t.Fatal(err)
 	}
 	entry := storage.AppendEntry{LSN: 1, EventID: "e1", EventType: "created", EventTimeUTCNs: 1, ReceivedAtUTCNs: 2, PayloadJSON: "{}", Source: "socket", SourceRef: "a", TenantID: stream.TenantID, SubjectType: stream.SubjectType, StreamKey: stream.StreamKey}
-	if err := s.AppendCommittedBatch(ctx, route, 1, []storage.AppendEntry{entry}, time.Now().UTC()); err != nil {
+	if err := s.AppendUncommittedBatch(ctx, route, 1, []storage.AppendEntry{entry}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.MarkCommitted(ctx, route.PartitionID, route.CreationDayUTC, 1, 1, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -86,10 +89,13 @@ func TestAppendBatchTransactionAndDedup(t *testing.T) {
 		{LSN: 1, EventID: "e1", EventType: "created", EventTimeUTCNs: 10, ReceivedAtUTCNs: 20, PayloadJSON: "{}", Source: "socket", SourceRef: "1", TenantID: stream.TenantID, SubjectType: stream.SubjectType, StreamKey: stream.StreamKey},
 		{LSN: 2, EventID: "e2", EventType: "paid", EventTimeUTCNs: 11, ReceivedAtUTCNs: 21, PayloadJSON: "{}", Source: "socket", SourceRef: "2", TenantID: stream.TenantID, SubjectType: stream.SubjectType, StreamKey: stream.StreamKey},
 	}
-	if err := s.AppendCommittedBatch(ctx, route, 3, entries, time.Now().UTC()); err != nil {
+	if err := s.AppendUncommittedBatch(ctx, route, 3, entries); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.AppendCommittedBatch(ctx, route, 3, []storage.AppendEntry{entries[0]}, time.Now().UTC()); err != nil {
+	if err := s.AppendUncommittedBatch(ctx, route, 3, []storage.AppendEntry{entries[0]}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.MarkCommitted(ctx, route.PartitionID, route.CreationDayUTC, 1, 2, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -119,7 +125,10 @@ func TestRecoveryReopenWALDatabases(t *testing.T) {
 			t.Fatal(err)
 		}
 		entry := storage.AppendEntry{LSN: 1, EventID: "recover", EventType: "x", EventTimeUTCNs: 1, ReceivedAtUTCNs: 2, PayloadJSON: "{}", Source: "socket", SourceRef: "src", TenantID: stream.TenantID, SubjectType: stream.SubjectType, StreamKey: stream.StreamKey}
-		if err := s.AppendCommittedBatch(ctx, route, 1, []storage.AppendEntry{entry}, time.Now().UTC()); err != nil {
+		if err := s.AppendUncommittedBatch(ctx, route, 1, []storage.AppendEntry{entry}); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.MarkCommitted(ctx, route.PartitionID, route.CreationDayUTC, 1, 1, time.Now().UTC()); err != nil {
 			t.Fatal(err)
 		}
 		_ = s.Close()
@@ -157,7 +166,10 @@ func TestReadPathsCommitAndVisualOrder(t *testing.T) {
 		{LSN: 1, EventID: "e1", EventType: "later-time", EventTimeUTCNs: 200, ReceivedAtUTCNs: 1, PayloadJSON: "{}", Source: "socket", SourceRef: "1", TenantID: stream.TenantID, SubjectType: stream.SubjectType, StreamKey: stream.StreamKey},
 		{LSN: 2, EventID: "e2", EventType: "earlier-time", EventTimeUTCNs: 100, ReceivedAtUTCNs: 2, PayloadJSON: "{}", Source: "socket", SourceRef: "2", TenantID: stream.TenantID, SubjectType: stream.SubjectType, StreamKey: stream.StreamKey},
 	}
-	if err := s.AppendCommittedBatch(ctx, route, 1, entries, time.Now().UTC()); err != nil {
+	if err := s.AppendUncommittedBatch(ctx, route, 1, entries); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.MarkCommitted(ctx, route.PartitionID, route.CreationDayUTC, 1, 2, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -240,5 +252,28 @@ func TestGetRouteUsesCanonicalizedStreamKey(t *testing.T) {
 	}
 	if got.PartitionID != route.PartitionID || got.CreationDayUTC != route.CreationDayUTC {
 		t.Fatalf("unexpected route lookup result: %+v", got)
+	}
+}
+
+func TestSnapshotRoundTripPartitionMeta(t *testing.T) {
+	ctx := context.Background()
+	s, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	if err := s.ApplySnapshot(ctx, 3, 42, "2026-01-15"); err != nil {
+		t.Fatal(err)
+	}
+	meta, err := s.CreateSnapshot(ctx, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if meta["snapshot_applied_index"] != "42" {
+		t.Fatalf("unexpected applied index: %+v", meta)
+	}
+	if meta["snapshot_watermark_day_utc"] != "2026-01-15" {
+		t.Fatalf("unexpected watermark: %+v", meta)
 	}
 }

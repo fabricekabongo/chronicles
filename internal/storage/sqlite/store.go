@@ -169,7 +169,7 @@ func (s *Store) GetRoute(ctx context.Context, stream domain.StreamRef) (domain.C
 	return getRouteDB(ctx, db, stream)
 }
 
-func (s *Store) AppendCommittedBatch(ctx context.Context, route domain.ChronicleRoute, term uint64, entries []storage.AppendEntry, committedAt time.Time) error {
+func (s *Store) AppendUncommittedBatch(ctx context.Context, route domain.ChronicleRoute, term uint64, entries []storage.AppendEntry) error {
 	db, err := s.eventsDB(route.CreationDayUTC, route.PartitionID)
 	if err != nil {
 		return err
@@ -189,12 +189,12 @@ INSERT INTO entries(
 	received_at_utc_ns, committed_at_utc_ns,
 	payload_json, payload_encoding, source, source_ref,
 	record_hash, prev_stream_hash, committed
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+ ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
 ON CONFLICT(partition_id, event_id) DO NOTHING`,
 			int(route.PartitionID), route.CreationDayUTC, int64(e.LSN), int64(term),
 			e.TenantID, e.SubjectType, e.StreamKey, nullableUint64(e.EventNo),
 			e.EventID, e.EventType, e.EventTimeUTCNs,
-			e.ReceivedAtUTCNs, committedAt.UTC().UnixNano(),
+			e.ReceivedAtUTCNs, e.ReceivedAtUTCNs,
 			e.PayloadJSON, emptyToDefault(e.PayloadEncoding, "json"), e.Source, e.SourceRef,
 			e.RecordHash, e.PrevStreamHash)
 		if err != nil {
@@ -206,16 +206,54 @@ ON CONFLICT(partition_id, event_id) DO NOTHING`,
 		return err
 	}
 
-	catalog, err := s.catalogDB(route.PartitionID)
+	return nil
+}
+
+func (s *Store) ApplySnapshot(ctx context.Context, partitionID domain.PartitionID, appliedIndex uint64, watermarkDayUTC string) error {
+	db, err := s.catalogDB(partitionID)
 	if err != nil {
 		return err
 	}
-	_, err = catalog.ExecContext(ctx, `
-UPDATE chronicle_route_index
-SET event_count = event_count + ?, last_received_at_utc_ns=?, updated_at_utc_ns=?
-WHERE tenant_id IS ? AND subject_type=? AND stream_key=?`,
-		len(entries), committedAt.UTC().UnixNano(), committedAt.UTC().UnixNano(), route.TenantID, route.SubjectType, route.StreamKey)
-	return err
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `
+INSERT INTO partition_meta(key, value) VALUES('snapshot_applied_index', ?)
+ON CONFLICT(key) DO UPDATE SET value=excluded.value`, fmt.Sprintf("%d", appliedIndex)); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+INSERT INTO partition_meta(key, value) VALUES('snapshot_watermark_day_utc', ?)
+ON CONFLICT(key) DO UPDATE SET value=excluded.value`, watermarkDayUTC); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func (s *Store) CreateSnapshot(ctx context.Context, partitionID domain.PartitionID) (map[string]string, error) {
+	db, err := s.catalogDB(partitionID)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := db.QueryContext(ctx, `SELECT key, value FROM partition_meta`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := map[string]string{}
+	for rows.Next() {
+		var k, v string
+		if err := rows.Scan(&k, &v); err != nil {
+			return nil, err
+		}
+		out[k] = v
+	}
+	return out, rows.Err()
 }
 
 func (s *Store) MarkCommitted(ctx context.Context, partitionID domain.PartitionID, creationDayUTC string, lsnFrom, lsnTo uint64, committedAt time.Time) error {
@@ -223,9 +261,50 @@ func (s *Store) MarkCommitted(ctx context.Context, partitionID domain.PartitionI
 	if err != nil {
 		return err
 	}
-	_, err = db.ExecContext(ctx, `UPDATE entries SET committed=1, committed_at_utc_ns=? WHERE partition_id=? AND lsn BETWEEN ? AND ?`,
-		committedAt.UTC().UnixNano(), int(partitionID), int64(lsnFrom), int64(lsnTo))
-	return err
+
+	rows, err := db.QueryContext(ctx, `
+SELECT tenant_id, subject_type, stream_key, count(*)
+FROM entries
+WHERE partition_id=? AND creation_day_utc=? AND lsn BETWEEN ? AND ?
+GROUP BY tenant_id, subject_type, stream_key`, int(partitionID), creationDayUTC, int64(lsnFrom), int64(lsnTo))
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	type streamCount struct {
+		tenantID    string
+		subjectType string
+		streamKey   string
+		count       int64
+	}
+	var counts []streamCount
+	for rows.Next() {
+		var item streamCount
+		if err := rows.Scan(&item.tenantID, &item.subjectType, &item.streamKey, &item.count); err != nil {
+			return err
+		}
+		counts = append(counts, item)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	catalog, err := s.catalogDB(partitionID)
+	if err != nil {
+		return err
+	}
+	for _, c := range counts {
+		if _, err := catalog.ExecContext(ctx, `
+UPDATE chronicle_route_index
+SET event_count = event_count + ?, last_received_at_utc_ns=?, updated_at_utc_ns=?
+WHERE tenant_id IS ? AND subject_type=? AND stream_key=?`,
+			c.count, committedAt.UTC().UnixNano(), committedAt.UTC().UnixNano(), c.tenantID, c.subjectType, c.streamKey); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (s *Store) GetChronicleByStream(ctx context.Context, stream domain.StreamRef) ([]storage.AppendEntry, error) {
