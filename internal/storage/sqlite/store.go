@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"chronicles/internal/domain"
+	"chronicles/internal/hashroute"
 	"chronicles/internal/storage"
 
 	_ "modernc.org/sqlite"
@@ -113,6 +114,12 @@ func (s *Store) Close() error {
 }
 
 func (s *Store) EnsureRoute(ctx context.Context, stream domain.StreamRef, partitionID domain.PartitionID, receivedAt time.Time) (domain.ChronicleRoute, error) {
+	stream = normalizeStreamRef(stream)
+	expectedPartition := domain.PartitionID(hashroute.PartitionForStreamKey(stream.StreamKey))
+	if partitionID != expectedPartition {
+		return domain.ChronicleRoute{}, fmt.Errorf("partition mismatch for stream_key %q: got %d want %d", stream.StreamKey, partitionID, expectedPartition)
+	}
+
 	db, err := s.catalogDB(partitionID)
 	if err != nil {
 		return domain.ChronicleRoute{}, err
@@ -153,21 +160,13 @@ DO UPDATE SET last_received_at_utc_ns=excluded.last_received_at_utc_ns, updated_
 }
 
 func (s *Store) GetRoute(ctx context.Context, stream domain.StreamRef) (domain.ChronicleRoute, bool, error) {
-	// deterministic partition lookup by searching all catalogs in v1 skeleton
-	for p := 0; p < 25; p++ {
-		db, err := s.catalogDB(domain.PartitionID(p))
-		if err != nil {
-			return domain.ChronicleRoute{}, false, err
-		}
-		route, ok, err := getRouteDB(ctx, db, stream)
-		if err != nil {
-			return domain.ChronicleRoute{}, false, err
-		}
-		if ok {
-			return route, true, nil
-		}
+	stream = normalizeStreamRef(stream)
+	partitionID := domain.PartitionID(hashroute.PartitionForStreamKey(stream.StreamKey))
+	db, err := s.catalogDB(partitionID)
+	if err != nil {
+		return domain.ChronicleRoute{}, false, err
 	}
-	return domain.ChronicleRoute{}, false, nil
+	return getRouteDB(ctx, db, stream)
 }
 
 func (s *Store) AppendCommittedBatch(ctx context.Context, route domain.ChronicleRoute, term uint64, entries []storage.AppendEntry, committedAt time.Time) error {
@@ -238,6 +237,7 @@ func (s *Store) GetChronicleByStreamVisualOrder(ctx context.Context, stream doma
 }
 
 func (s *Store) getChronicle(ctx context.Context, stream domain.StreamRef, sort storage.QuerySort) ([]storage.AppendEntry, error) {
+	stream = normalizeStreamRef(stream)
 	route, ok, err := s.GetRoute(ctx, stream)
 	if err != nil {
 		return nil, err
@@ -283,6 +283,11 @@ ORDER BY %s`, orderBy), stream.TenantID, stream.SubjectType, stream.StreamKey)
 		out = append(out, item)
 	}
 	return out, rows.Err()
+}
+
+func normalizeStreamRef(stream domain.StreamRef) domain.StreamRef {
+	stream.StreamKey = hashroute.CanonicalizeStreamKey(stream.StreamKey)
+	return stream
 }
 
 func (s *Store) catalogDB(partitionID domain.PartitionID) (*sql.DB, error) {

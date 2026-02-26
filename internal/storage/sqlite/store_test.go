@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"chronicles/internal/domain"
+	"chronicles/internal/hashroute"
 	"chronicles/internal/storage"
 )
 
@@ -44,7 +45,7 @@ func TestEntriesAreAppendOnlyViaTriggers(t *testing.T) {
 	defer s.Close()
 
 	stream := domain.StreamRef{TenantID: "t1", SubjectType: "order", StreamKey: "45"}
-	route, err := s.EnsureRoute(ctx, stream, 0, time.Now().UTC())
+	route, err := s.EnsureRoute(ctx, stream, domain.PartitionID(hashroute.PartitionForStreamKey(stream.StreamKey)), time.Now().UTC())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +78,7 @@ func TestAppendBatchTransactionAndDedup(t *testing.T) {
 	defer s.Close()
 
 	stream := domain.StreamRef{TenantID: "t1", SubjectType: "order", StreamKey: "45"}
-	route, err := s.EnsureRoute(ctx, stream, 2, time.Now().UTC())
+	route, err := s.EnsureRoute(ctx, stream, domain.PartitionID(hashroute.PartitionForStreamKey(stream.StreamKey)), time.Now().UTC())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +114,7 @@ func TestRecoveryReopenWALDatabases(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		route, err = s.EnsureRoute(ctx, stream, 1, time.Now().UTC())
+		route, err = s.EnsureRoute(ctx, stream, domain.PartitionID(hashroute.PartitionForStreamKey(stream.StreamKey)), time.Now().UTC())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -147,7 +148,7 @@ func TestReadPathsCommitAndVisualOrder(t *testing.T) {
 	defer s.Close()
 
 	stream := domain.StreamRef{TenantID: "t1", SubjectType: "order", StreamKey: "45"}
-	route, err := s.EnsureRoute(ctx, stream, 3, time.Now().UTC())
+	route, err := s.EnsureRoute(ctx, stream, domain.PartitionID(hashroute.PartitionForStreamKey(stream.StreamKey)), time.Now().UTC())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,5 +194,51 @@ func TestSQLiteWALModeEnabled(t *testing.T) {
 	}
 	if strings.ToLower(mode) != "wal" {
 		t.Fatalf("journal mode must be WAL, got %q", mode)
+	}
+}
+
+func TestEnsureRouteRejectsMismatchedPartition(t *testing.T) {
+	ctx := context.Background()
+	s, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	stream := domain.StreamRef{TenantID: "t1", SubjectType: "order", StreamKey: "Order-45"}
+	wrongPartition := domain.PartitionID(0)
+	if right := domain.PartitionID(hashroute.PartitionForStreamKey(stream.StreamKey)); right == wrongPartition {
+		wrongPartition = 1
+	}
+
+	if _, err := s.EnsureRoute(ctx, stream, wrongPartition, time.Now().UTC()); err == nil {
+		t.Fatalf("expected partition mismatch error")
+	}
+}
+
+func TestGetRouteUsesCanonicalizedStreamKey(t *testing.T) {
+	ctx := context.Background()
+	s, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	stream := domain.StreamRef{TenantID: "t1", SubjectType: "order", StreamKey: "  Order-45  "}
+	partition := domain.PartitionID(hashroute.PartitionForStreamKey(stream.StreamKey))
+	route, err := s.EnsureRoute(ctx, stream, partition, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, ok, err := s.GetRoute(ctx, domain.StreamRef{TenantID: stream.TenantID, SubjectType: stream.SubjectType, StreamKey: "order-45"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatalf("expected route to exist")
+	}
+	if got.PartitionID != route.PartitionID || got.CreationDayUTC != route.CreationDayUTC {
+		t.Fatalf("unexpected route lookup result: %+v", got)
 	}
 }
