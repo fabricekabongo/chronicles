@@ -315,7 +315,7 @@ func (a *Adapter) parseDelivery(d amqp091.Delivery) (domain.EventEnvelope, error
 	for k, v := range msg.Metadata {
 		meta[k] = fmt.Sprint(v)
 	}
-	sourceRef := fmt.Sprintf("%s/%s/%d", d.Exchange, d.RoutingKey, d.DeliveryTag)
+	sourceRef := fmt.Sprintf("%s/%s/%d", d.Exchange, a.cfg.Queue, d.DeliveryTag)
 	payload := msg.Payload
 	if len(payload) == 0 {
 		payload = json.RawMessage(d.Body)

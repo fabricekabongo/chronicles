@@ -99,4 +99,7 @@ func TestParseDeliveryHeaderFallbacks(t *testing.T) {
 	if env.Source != "rabbitmq" || env.EventID != "e-header" {
 		t.Fatalf("unexpected envelope mapping: %+v", env)
 	}
+	if env.SourceRef != "chronicles.events/q/11" {
+		t.Fatalf("unexpected source ref: %s", env.SourceRef)
+	}
 }
