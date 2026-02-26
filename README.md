@@ -1,21 +1,20 @@
 # Chronicles
 
-Initial Step 0 scaffolding for the distributed replicated engine spec.
+Step 1-2 scaffold for the distributed replicated engine spec.
 
-## Step 0 invariants encoded
+## Included in this increment
 
-- Append-only event model (`Event` as immutable record; corrections should be represented as new events).
-- Quorum majority math helper (`QuorumSize`).
-- Deterministic routing (`partition_id = hash(stream_key) % 25`).
-- First accepted event creates immutable route entry (`Router.EnsureRoute`).
-- Routing day pinned in UTC (`CreationDayUTC` as `YYYY-MM-DD`, UTC-only).
-- Generic stream identity via `subject_type + stream_key`.
-- Dual time model fields on events:
-  - `event_time_utc` (producer timeline)
-  - `received_at_utc` / `committed_at_utc` (Chronicles operational timeline)
+- Repository skeleton with `chroniclesd` and `chroniclesctl` commands.
+- Config loader (`internal/config`) supporting YAML/TOML files and `CHRONICLES_*` env overrides.
+- Feature flags to enable socket/Kafka/RabbitMQ adapters simultaneously.
+- Core domain envelopes and route/commit metadata structs.
+- Deterministic hash routing (`partition_id = hash(canonical_stream_key) % 25`).
+- UTC-pinned route creation day on first accepted event.
+- Unit/property tests for routing determinism and config behavior.
 
-## Run tests
+## Run
 
 ```bash
 go test ./...
+go build ./...
 ```
