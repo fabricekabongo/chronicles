@@ -2,9 +2,10 @@ package core
 
 import (
 	"fmt"
-	"hash/fnv"
 	"sync"
 	"time"
+
+	"chronicles/internal/hashroute"
 )
 
 const (
@@ -92,15 +93,13 @@ func (r *Router) Route(subjectType, streamKey string) (StreamRoute, bool) {
 }
 
 func routeKey(subjectType, streamKey string) string {
-	return subjectType + "::" + streamKey
+	return subjectType + "::" + hashroute.CanonicalizeStreamKey(streamKey)
 }
 
 // PartitionForStreamKey computes deterministic partition assignment.
 // partition_id = hash(stream_key) % 25
 func PartitionForStreamKey(streamKey string) int {
-	h := fnv.New64a()
-	_, _ = h.Write([]byte(streamKey))
-	return int(h.Sum64() % PartitionCount)
+	return hashroute.PartitionForStreamKey(streamKey)
 }
 
 // QuorumSize returns simple majority for a replica group size.
