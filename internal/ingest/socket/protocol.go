@@ -31,14 +31,15 @@ const (
 )
 
 type SocketRequest struct {
-	RequestId    string              `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3"`
-	AuthToken    string              `protobuf:"bytes,2,opt,name=auth_token,json=authToken,proto3"`
-	Operation    int32               `protobuf:"varint,3,opt,name=operation,proto3"`
-	Append       *AppendRequest      `protobuf:"bytes,4,opt,name=append,proto3"`
-	AppendBatch  *AppendBatchRequest `protobuf:"bytes,5,opt,name=append_batch,json=appendBatch,proto3"`
-	GetRoute     *RouteQuery         `protobuf:"bytes,6,opt,name=get_route,json=getRoute,proto3"`
-	GetChronicle *ChronicleQuery     `protobuf:"bytes,7,opt,name=get_chronicle,json=getChronicle,proto3"`
-	Ping         *PingRequest        `protobuf:"bytes,8,opt,name=ping,proto3"`
+	RequestId               string              `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3"`
+	AuthToken               string              `protobuf:"bytes,2,opt,name=auth_token,json=authToken,proto3"`
+	Operation               int32               `protobuf:"varint,3,opt,name=operation,proto3"`
+	Append                  *AppendRequest      `protobuf:"bytes,4,opt,name=append,proto3"`
+	AppendBatch             *AppendBatchRequest `protobuf:"bytes,5,opt,name=append_batch,json=appendBatch,proto3"`
+	GetRoute                *RouteQuery         `protobuf:"bytes,6,opt,name=get_route,json=getRoute,proto3"`
+	GetChronicle            *ChronicleQuery     `protobuf:"bytes,7,opt,name=get_chronicle,json=getChronicle,proto3"`
+	GetChronicleVisualOrder *ChronicleQuery     `protobuf:"bytes,8,opt,name=get_chronicle_visual_order,json=getChronicleVisualOrder,proto3"`
+	Ping                    *PingRequest        `protobuf:"bytes,9,opt,name=ping,proto3"`
 }
 
 func (*SocketRequest) Reset()         {}
@@ -119,13 +120,21 @@ func (*PongResponse) Reset()         {}
 func (*PongResponse) String() string { return "PongResponse" }
 func (*PongResponse) ProtoMessage()  {}
 
-type RouteQuery struct{ TenantId, SubjectType, StreamKey string }
+type RouteQuery struct {
+	TenantId    string `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3"`
+	SubjectType string `protobuf:"bytes,2,opt,name=subject_type,json=subjectType,proto3"`
+	StreamKey   string `protobuf:"bytes,3,opt,name=stream_key,json=streamKey,proto3"`
+}
 
 func (*RouteQuery) Reset()         {}
 func (*RouteQuery) String() string { return "RouteQuery" }
 func (*RouteQuery) ProtoMessage()  {}
 
-type ChronicleQuery struct{ TenantId, SubjectType, StreamKey string }
+type ChronicleQuery struct {
+	TenantId    string `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3"`
+	SubjectType string `protobuf:"bytes,2,opt,name=subject_type,json=subjectType,proto3"`
+	StreamKey   string `protobuf:"bytes,3,opt,name=stream_key,json=streamKey,proto3"`
+}
 
 func (*ChronicleQuery) Reset()         {}
 func (*ChronicleQuery) String() string { return "ChronicleQuery" }
