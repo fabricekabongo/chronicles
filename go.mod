@@ -6,6 +6,7 @@ toolchain go1.24.3
 
 require (
 	github.com/golang/protobuf v1.5.4
+	github.com/rabbitmq/amqp091-go v1.10.0
 	github.com/spf13/viper v1.21.0
 	github.com/testcontainers/testcontainers-go v0.40.0
 	github.com/twmb/franz-go v1.20.7

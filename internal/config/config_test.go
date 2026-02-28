@@ -24,6 +24,9 @@ ingest:
     commit_mode: after_quorum_commit
   rabbitmq:
     enabled: true
+    exchange: chronicles.events
+    queue: chronicles.ingest
+    manual_ack: true
 backup:
   s3:
     enabled: true
@@ -42,6 +45,9 @@ backup:
 	}
 	if !cfg.Ingest.Socket.Enabled || !cfg.Ingest.RabbitMQ.Enabled {
 		t.Fatalf("expected multiple adapters enabled")
+	}
+	if !cfg.Ingest.RabbitMQ.ManualAck {
+		t.Fatalf("expected rabbitmq manual_ack default true")
 	}
 }
 
@@ -83,7 +89,7 @@ func TestValidateDisallowMultipleAdapters(t *testing.T) {
 		Ingest: IngestConfig{
 			Socket:   AdapterConfig{Enabled: true},
 			Kafka:    KafkaConfig{Enabled: true, Brokers: []string{"b:9092"}, Topics: []string{"t"}, GroupID: "g", CommitMode: "after_quorum_commit"},
-			RabbitMQ: AdapterConfig{Enabled: false},
+			RabbitMQ: RabbitMQConfig{Enabled: false},
 		},
 		Feature: FeatureConfig{AllowMultipleAdapters: false},
 	}

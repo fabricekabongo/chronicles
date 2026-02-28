@@ -7,6 +7,7 @@ Step 1-4 scaffold for the distributed replicated engine spec.
 - Repository skeleton with `chroniclesd` and `chroniclesctl` commands.
 - Config loader (`internal/config`) supporting YAML/TOML files and `CHRONICLES_*` env overrides.
 - Feature flags to enable socket/Kafka/RabbitMQ adapters simultaneously.
+- RabbitMQ ingress adapter (`internal/ingest/rabbitmq`) powered by `amqp091-go` with manual ACK-after-commit semantics, retryable NACK requeue, permanent-failure NACK drop, configurable prefetch/worker backpressure, and message normalization into `EventEnvelope`.
 - Core domain envelopes and route/commit metadata structs.
 - Deterministic hash routing (`partition_id = hash(canonical_stream_key) % 25`).
 - UTC-pinned route creation day on first accepted event.
