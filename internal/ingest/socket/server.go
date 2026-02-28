@@ -261,10 +261,14 @@ func (s *Server) handleRequest(ctx context.Context, req *SocketRequest) *SocketR
 		r, e, found := s.engine.GetChronicle(ctx, streamRef(req.GetChronicle.TenantId, req.GetChronicle.SubjectType, req.GetChronicle.StreamKey))
 		res.Chronicle = toChronicleResponse(found, r, e)
 	case OperationGetChronicleVisualOrder:
-		if req.GetChronicle == nil {
-			return badReq(req, "get_chronicle query required")
+		query := req.GetChronicleVisualOrder
+		if query == nil {
+			query = req.GetChronicle
 		}
-		r, e, found := s.engine.GetChronicleVisualOrder(ctx, streamRef(req.GetChronicle.TenantId, req.GetChronicle.SubjectType, req.GetChronicle.StreamKey))
+		if query == nil {
+			return badReq(req, "get_chronicle_visual_order query required")
+		}
+		r, e, found := s.engine.GetChronicleVisualOrder(ctx, streamRef(query.TenantId, query.SubjectType, query.StreamKey))
 		res.Chronicle = toChronicleResponse(found, r, e)
 	default:
 		return badReq(req, "unknown operation")

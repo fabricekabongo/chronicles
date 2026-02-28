@@ -43,3 +43,18 @@ func TestProtoRoundTrip(t *testing.T) {
 		t.Fatalf("bad decode: %+v", decoded)
 	}
 }
+
+func TestVisualOrderQueryProtoRoundTrip(t *testing.T) {
+	req := &SocketRequest{RequestId: "q1", Operation: int32(OperationGetChronicleVisualOrder), GetChronicleVisualOrder: &ChronicleQuery{TenantId: "t", SubjectType: "order", StreamKey: "stream"}}
+	payload, err := MarshalMessage(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := UnmarshalRequest(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decoded.GetChronicleVisualOrder == nil || decoded.GetChronicleVisualOrder.StreamKey != "stream" {
+		t.Fatalf("bad decode: %+v", decoded)
+	}
+}

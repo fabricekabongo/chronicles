@@ -75,6 +75,24 @@ func TestConcurrentLoad(t *testing.T) {
 	}
 }
 
+func TestGetChronicleVisualOrderOperation(t *testing.T) {
+	srv, addr, cancel := startTestServer(t, 0)
+	defer cancel()
+	defer srv.Close()
+
+	_, err := DialAndRequest(context.Background(), "tcp", addr, &SocketRequest{RequestId: "w1", AuthToken: "secret", Operation: int32(OperationAppend), Append: &AppendRequest{Event: &Event{TenantId: "t", SubjectType: "order", StreamKey: "v", EventId: "e1"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := DialAndRequest(context.Background(), "tcp", addr, &SocketRequest{RequestId: "w2", AuthToken: "secret", Operation: int32(OperationGetChronicleVisualOrder), GetChronicleVisualOrder: &ChronicleQuery{TenantId: "t", SubjectType: "order", StreamKey: "v"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.ErrorCode != int32(ErrorCodeOK) || resp.Chronicle == nil || !resp.Chronicle.Found || len(resp.Chronicle.Events) != 1 {
+		t.Fatalf("bad visual order response: %+v", resp)
+	}
+}
+
 func TestIdempotentAppend(t *testing.T) {
 	srv, addr, cancel := startTestServer(t, 0)
 	defer cancel()
